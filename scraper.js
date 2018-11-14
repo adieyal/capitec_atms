@@ -3,27 +3,25 @@
 var cheerio = require("cheerio");
 var request = require("request");
 var sqlite3 = require("sqlite3").verbose();
+var url = 'https://www.capitecbank.co.za/branch-locator?searchTerm=&_atms=&atms=on&_cashAcceptingAtms=&_branches=&_homeloans=';
 
 function initDatabase(callback) {
-	// Set up sqlite database.
 	var db = new sqlite3.Database("data.sqlite");
 	db.serialize(function() {
-		db.run("CREATE TABLE IF NOT EXISTS data (name TEXT)");
+		db.run("CREATE TABLE IF NOT EXISTS data (lat float, lng float, title text)");
 		callback(db);
 	});
 }
 
-function updateRow(db, value) {
-	// Insert some data.
-	var statement = db.prepare("INSERT INTO data VALUES (?)");
-	statement.run(value);
+function updateRow(db, lat, lng, title) {
+	var statement = db.prepare("INSERT INTO data VALUES (?, ?, ?)");
+	statement.run(lat, lng, title);
 	statement.finalize();
 }
 
 function readRows(db) {
-	// Read some data.
-	db.each("SELECT rowid AS id, name FROM data", function(err, row) {
-		console.log(row.id + ": " + row.name);
+	db.each("SELECT rowid AS id, lat, lng, title FROM data", function(err, row) {
+		console.log(row.id + ": " + row.title + "(" + row.lat + "," + row.lng + ")");
 	});
 }
 
@@ -40,15 +38,19 @@ function fetchPage(url, callback) {
 }
 
 function run(db) {
-	// Use request to read in pages.
-	fetchPage("https://morph.io", function (body) {
+	fetchPage(url, function (body) {
 		// Use cheerio to find things in the page with css selectors.
 		var $ = cheerio.load(body);
 
-		var elements = $("div.media-body span.p-name").each(function () {
-			var value = $(this).text().trim();
-			updateRow(db, value);
-		});
+        var elements = $('.branchContactDetail').each(function(index, element) {
+            var title = $(element).find('h2').text().trim();
+            var lat = $(element).find('input[name="latitude"]').prop('value')
+            var lng = $(element).find('input[name="longitude"]').prop('value')
+            if (title != '' && lat != '' && lng != '') {
+                updateRow(db, lat, lng, title);
+            }
+
+        });
 
 		readRows(db);
 
